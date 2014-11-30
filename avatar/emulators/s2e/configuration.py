@@ -20,7 +20,7 @@ class S2EConfiguration():
         self._avatar_configuration = "avatar_configuration" in config and config["avatar_configuration"] or {}
         self._qemu_configuration = ("qemu_configuration" in config) and config["qemu_configuration"] or {}
         
-        mem_addr = "localhost"
+        mem_addr = "127.0.0.1"
         mem_port = get_random_free_port()
         if not isinstance(self._s2e_configuration["plugins"],OrderedDict):
             log.warn("plugins dictionnary should be ordered (use OrderedDict), s2e should take care of ordering plugins one day !")
@@ -33,7 +33,7 @@ class S2EConfiguration():
         self._s2e_remote_memory_plugin_sockaddr = (mem_addr, mem_port)
         
         #TODO: Test if this is specified in configuration, and use values from config if so
-        self._s2e_gdb_sockaddr = ("localhost", get_random_free_port())
+        self._s2e_gdb_sockaddr = ("127.0.0.1", get_random_free_port())
         
 
     def get_klee_cmdline(self):
@@ -52,6 +52,13 @@ class S2EConfiguration():
             if "max-stp-time" in klee_conf:
                 cmdline.append("--max-stp-time=%f" % klee_conf["max-stp-time"])
             cmdline.append("--use-expr-simplifier=%s" % (("use-expr-simplifier" in klee_conf and klee_conf["use-expr-simplifier"]) and "true" or "false"))
+            cmdline.append("--use-concolic-execution=%s" % (("use-concolic-execution" in klee_conf and klee_conf["use-concolic-execution"]) and "true" or "false"))
+            cmdline.append("--print-mode-switch=true")
+            cmdline.append("--concretize-io-address=false")
+            cmdline.append("--concretize-io-writes=true")
+            cmdline.append("--allow-external-sym-calls=false")
+            cmdline.append("--verbose-fork-info=true")
+
         return cmdline
         
         
@@ -60,6 +67,7 @@ class S2EConfiguration():
         lua.append("-- Automatically generated Lua script configuration for S2E\n")
         lua.append("-- Do not edit!\n")
         lua.append("\n")
+        lua.append("AVATAR_SRC_ROOT_PATH=\"%s\"\n" % (os.getcwd() + "/../../"))
         lua.append("s2e = {\n")
         lua.append("generate_testcase_on_kill = %s," % (("generate_testcase_on_kill" not in self._s2e_configuration \
                                                         or self._s2e_configuration["generate_testcase_on_kill"]) and "true" or "false"))        
@@ -155,7 +163,9 @@ class S2EConfiguration():
         This method returns the absolute path to S2E binary.
         """
         # explicit binary path in config
-        if "s2e_binary" in self._s2e_configuration and self._s2e_configuration["s2e_binary"]:
+        if "QEMU_S2E" in os.environ:
+            return os.environ["QEMU_S2E"]
+        elif "s2e_binary" in self._s2e_configuration and self._s2e_configuration["s2e_binary"]:
             return self._s2e_configuration["s2e_binary"]
         # fallback, architecture specific
         elif arch == "arm" and "s2e_debug" in self._avatar_configuration and self._avatar_configuration["s2e_debug"]:
@@ -182,7 +192,7 @@ class S2EConfiguration():
             cmdline.append("--leak-check=full")
           
         # S2E parameters  
-        cmdline.append(self.get_s2e_executable(self._cm_configuration["architecture"], self._cm_configuration["endianness"]))
+        cmdline.append(self.get_s2e_executable(self._cm_configuration["architecture"], "endianness" in self._cm_configuration and self._cm_configuration["endianness"] or "little"))
         cmdline.append("-s2e-config-file")
         cmdline.append(os.path.join(self._output_directory, "s2e_conf.lua"))
         if "verbose" in self._s2e_configuration and self._s2e_configuration["verbose"]:
@@ -201,7 +211,7 @@ class S2EConfiguration():
             cmdline.append("-S")
         self._qemu_configuration["gdb"] = "tcp::%d,server" % get_random_free_port()
         cmdline.append("-gdb")
-        cmdline.append("tcp::%d,server" % self._s2e_gdb_sockaddr[1])
+        cmdline.append("tcp:127.0.0.1:%d,server" % self._s2e_gdb_sockaddr[1])
         if "append" in self._qemu_configuration:
             for val in self._qemu_configuration["append"]:
                 cmdline.append(val)
@@ -215,6 +225,10 @@ class S2EConfiguration():
             cmdline.append(os.path.join(self._output_directory, "qemu_trace.log"))
             cmdline.append("-d")
             cmdline.append(",".join(trace_opts))
+
+        if "extra_opts" in self._qemu_configuration:
+            for o in self._qemu_configuration["extra_opts"]:
+                cmdline.append(o)
 
         return cmdline
             

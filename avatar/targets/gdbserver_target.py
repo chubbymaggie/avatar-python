@@ -6,7 +6,7 @@ Created on Jun 24, 2013
 from avatar.targets.target import Target
 import logging
 from avatar.bintools.gdb.gdb_debugger import GdbDebugger
-from avatar.system import EVENT_RUNNING, EVENT_STOPPED, EVENT_BREAKPOINT
+from avatar.system import EVENT_RUNNING, EVENT_STOPPED, EVENT_BREAKPOINT, EVENT_SIGABRT
 from avatar.bintools.gdb.mi_parser import Async
 from avatar.debuggable import Breakpoint
 from queue import Queue
@@ -41,6 +41,8 @@ class GdbBreakpoint(Breakpoint):
             if self._handler:
                 self._handler(self._system, self)
             else:
+                self._queue.put(evt)
+        elif EVENT_SIGABRT in evt["tags"]:
                 self._queue.put(evt)
 
 class GdbserverTarget(Target):
@@ -83,6 +85,8 @@ class GdbserverTarget(Target):
 
     def execute_gdb_command(self, cmd):
         return self._gdb_interface.execute_gdb_command(cmd)
+    def get_checksum(self, addr, size):
+        return self._gdb_interface.get_checksum(addr, size)
         
     def stop(self):
         pass
@@ -109,11 +113,22 @@ class GdbserverTarget(Target):
                                         "address": int(msg.results["frame"]["addr"], 16),
                                         "bkpt_number": int(msg.results["bkptno"])},
                                      "channel": "gdb"})
-                
+                elif "reason" in msg.results and msg.results["reason"] == "signal-received":
+                    # this is data abort
+                    try:
+                        addr = int(msg.results["frame"]["addr"], 16)
+                    except:
+                        addr = 0xDEADDEAD
+                    self._post_event({"tags": [EVENT_STOPPED, EVENT_SIGABRT],
+                        "properties": {
+                            "address": addr,
+                            },
+                        "channel": "gdb"})
     def _post_event(self, evt):
         evt["source"] = "target"
         self._system.post_event(evt)
     
+
     @classmethod
     def from_str(cls, sockaddr_str):
         assert(sockaddr_str.startswith("tcp:"))

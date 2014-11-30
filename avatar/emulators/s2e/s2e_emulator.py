@@ -59,9 +59,8 @@ class S2EEmulator(Emulator):
     def start(self):
         s2e_processes = find_processes(self._cmdline[0])
         if s2e_processes:
-            log.warn("There are still S2E instances running, killing them ...")
-            for proc in s2e_processes:
-                os.kill(proc["pid"], signal.SIGKILL)
+            log.warn("There are still S2E instances running, NOT killing them ...")
+            log.warn("Results might be corrupted if output files are not different")
         log.info("Executing S2E process: %s", " ".join(["'%s'" % x for x in self._cmdline]))
         self._s2e_thread = threading.Thread(target = self.run_s2e_process)
         self._is_s2e_running = threading.Event()
@@ -107,6 +106,10 @@ class S2EEmulator(Emulator):
                 self._remote_memory_interface = S2ERemoteMemoryInterface(self._configuration.get_remote_memory_listen_address())
                 self._remote_memory_interface.set_read_handler(self._notify_read_request_handler)
                 self._remote_memory_interface.set_write_handler(self._notify_write_request_handler)
+                self._remote_memory_interface.set_set_cpu_state_handler(self._notify_set_cpu_state_handler)
+                self._remote_memory_interface.set_get_cpu_state_handler(self._notify_get_cpu_state_handler)
+                self._remote_memory_interface.set_continue_handler(self._notify_continue_handler)
+                self._remote_memory_interface.set_get_checksum_handler(self._system.get_target().get_checksum)
                 time.sleep(2) #Wait a bit for the S2E process to start
                 self._remote_memory_interface.start()
 
